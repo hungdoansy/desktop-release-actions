@@ -139,7 +139,15 @@ export function writeOutput(file, name, value) {
   appendFileSync(file, `${name}<<${marker}\n${value}\n${marker}\n`);
 }
 
+/** Take the key out of the environment: child processes inherit it, and only Gemini needs it. */
+export function takeApiKey(env = process.env) {
+  const apiKey = env.GEMINI_API_KEY;
+  delete env.GEMINI_API_KEY;
+  return apiKey;
+}
+
 async function main() {
+  const apiKey = takeApiKey();
   const version = process.env.VERSION;
   const tag = validateRelease(version);
   const date = new Date().toISOString().slice(0, 10);
@@ -148,7 +156,7 @@ async function main() {
   console.log(`Last tag: ${lastTag || "(none)"}`);
 
   const { entries, status, warn } = await draftNotes(subjects, {
-    apiKey: process.env.GEMINI_API_KEY,
+    apiKey,
   });
   console.log(warn ? `::warning::${status}` : status);
 

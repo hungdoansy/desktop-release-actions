@@ -11,6 +11,7 @@ import {
   draftNotes,
   filterSubjects,
   polishWithGemini,
+  takeApiKey,
   validateRelease,
   writeOutput,
 } from "./validate-and-draft-notes.mjs";
@@ -261,6 +262,30 @@ for (const [name, fetchImpl] of Object.entries(FAILURES)) {
     assert.ok(!result.status.includes(BODY));
   });
 }
+
+const KEY = "fake-gemini-key";
+const KEY_FAILURES = {
+  "an error body": async () => ({ ok: false, status: 403, json: async () => ({ error: KEY }) }),
+  "a network error": async () => {
+    throw new Error(`request to ${KEY} failed`);
+  },
+};
+
+for (const [name, fetchImpl] of Object.entries(KEY_FAILURES)) {
+  test(`draftNotes keeps the key out of its output on ${name}`, async (t) => {
+    const log = t.mock.method(console, "log", () => {});
+    const result = await draftNotes(["feat: a"], { apiKey: KEY, fetchImpl });
+    const logged = log.mock.calls.map((call) => call.arguments.join(" ")).join("\n");
+    assert.ok(!logged.includes(KEY));
+    assert.ok(!JSON.stringify(result).includes(KEY));
+  });
+}
+
+test("takeApiKey removes the key from the environment", () => {
+  const env = { GEMINI_API_KEY: KEY, VERSION: "1.0.0" };
+  assert.equal(takeApiKey(env), KEY);
+  assert.deepEqual(env, { VERSION: "1.0.0" });
+});
 
 test("writeOutput round-trips notes that look like delimiters and outputs", () => {
   const file = join(tempDir(), "output");
