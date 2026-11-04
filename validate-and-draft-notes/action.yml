@@ -8,12 +8,6 @@ inputs:
   gemini-api-key:
     description: Optional. Without it, the notes are the filtered commit list.
     default: ""
-  gemini-model:
-    description: Gemini model that rewrites the notes.
-    default: gemini-3.5-flash
-  gemini-api-version:
-    description: Gemini API version in the request path.
-    default: v1
 
 outputs:
   version:
@@ -37,6 +31,4 @@ runs:
       env:
         VERSION: ${{ inputs.version }}
         GEMINI_API_KEY: ${{ inputs.gemini-api-key }}
-        GEMINI_MODEL: ${{ inputs.gemini-model }}
-        GEMINI_API_VERSION: ${{ inputs.gemini-api-version }}
       run: node "$GITHUB_ACTION_PATH/validate-and-draft-notes.mjs"

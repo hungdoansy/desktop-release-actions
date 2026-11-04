@@ -172,7 +172,7 @@ test("collectSubjects returns nothing when HEAD is the last tag", () => {
   assert.deepEqual(collectSubjects(repo).subjects, []);
 });
 
-const OPTIONS = { apiKey: "k", model: "gemini-3.5-flash", apiVersion: "v1" };
+const OPTIONS = { apiKey: "k" };
 const json = (body) => ({ ok: true, status: 200, json: async () => body });
 
 test("polishWithGemini joins every text part", async () => {
@@ -181,7 +181,7 @@ test("polishWithGemini joins every text part", async () => {
   assert.equal(await polishWithGemini("- a", { ...OPTIONS, fetchImpl }), "- one\n- two");
 });
 
-test("polishWithGemini builds the URL from the model and API version", async () => {
+test("polishWithGemini calls the one Gemini URL and keeps the key out of it", async () => {
   let url;
   let headers;
   const fetchImpl = async (u, init) => {
@@ -189,16 +189,8 @@ test("polishWithGemini builds the URL from the model and API version", async () 
     headers = init.headers;
     return json({ candidates: [{ content: { parts: [{ text: "- ok" }] } }] });
   };
-  await polishWithGemini("- a", {
-    apiKey: "secret",
-    model: "gemini-2.5-flash",
-    apiVersion: "v1beta",
-    fetchImpl,
-  });
-  assert.equal(
-    url,
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
-  );
+  await polishWithGemini("- a", { apiKey: "secret", fetchImpl });
+  assert.equal(url, "https://generativelanguage.googleapis.com/v1/models/gemini-3.6-flash:generateContent");
   assert.equal(headers["x-goog-api-key"], "secret");
   assert.ok(!url.includes("secret"));
 });
@@ -225,7 +217,7 @@ test("draftNotes uses Gemini's text on success", async () => {
   const result = await draftNotes(["feat: a"], { ...OPTIONS, fetchImpl });
   assert.equal(result.entries, "- polished");
   assert.equal(result.warn, false);
-  assert.match(result.status, /model: gemini-3\.5-flash/);
+  assert.match(result.status, /model: gemini-3\.6-flash/);
 });
 
 test("draftNotes skips Gemini when no commits survive the filter", async () => {
@@ -263,7 +255,7 @@ for (const [name, fetchImpl] of Object.entries(FAILURES)) {
     const logged = log.mock.calls.map((call) => call.arguments.join(" ")).join("\n");
     assert.equal(result.entries, "- a");
     assert.equal(result.warn, true);
-    assert.equal(result.status, "Gemini unavailable (model: gemini-3.5-flash), using raw git log");
+    assert.equal(result.status, "Gemini unavailable (model: gemini-3.6-flash), using raw git log");
     assert.match(logged, /Gemini request failed/);
     assert.ok(!logged.includes(BODY));
     assert.ok(!result.status.includes(BODY));

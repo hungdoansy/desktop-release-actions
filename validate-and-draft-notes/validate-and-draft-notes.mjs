@@ -6,8 +6,6 @@
 // Env:
 //   VERSION              X.Y.Z, required
 //   GEMINI_API_KEY       optional
-//   GEMINI_MODEL         default gemini-3.5-flash
-//   GEMINI_API_VERSION   default v1
 //   GITHUB_OUTPUT        provided by the runner (keys: version, tag, date, changelog)
 //   GITHUB_STEP_SUMMARY  provided by the runner
 import { execFileSync } from "node:child_process";
@@ -16,8 +14,8 @@ import { appendFileSync, realpathSync } from "node:fs";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-const DEFAULT_MODEL = "gemini-3.5-flash";
-const DEFAULT_API_VERSION = "v1";
+const GEMINI_MODEL = "gemini-3.6-flash";
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1/models/${GEMINI_MODEL}:generateContent`;
 const GEMINI_TIMEOUT_MS = 30_000;
 const NO_CHANGES = "- No notable changes";
 
@@ -72,10 +70,7 @@ export function collectSubjects(cwd) {
  * Ask Gemini to rewrite the notes. Errors carry only a status: step logs are public on
  * a public repo, and an API error body can name account details.
  */
-export async function polishWithGemini(
-  raw,
-  { apiKey, model, apiVersion, fetchImpl = globalThis.fetch, timeoutMs = GEMINI_TIMEOUT_MS },
-) {
+export async function polishWithGemini(raw, { apiKey, fetchImpl = globalThis.fetch, timeoutMs = GEMINI_TIMEOUT_MS }) {
   const prompt = [
     "You are a release notes writer. Given a list of git commit messages, rewrite them as concise, user-facing release notes.",
     "Use bullet points starting with '- '. Focus on what changed from the user's perspective.",
@@ -86,10 +81,9 @@ export async function polishWithGemini(
     raw,
   ].join("\n");
 
-  const url = `https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent`;
   let res;
   try {
-    res = await fetchImpl(url, {
+    res = await fetchImpl(GEMINI_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
@@ -116,7 +110,7 @@ export async function polishWithGemini(
 }
 
 /** Decide the notes. Returns them with a one-line status, and whether that status warns. */
-export async function draftNotes(subjects, { apiKey, model, apiVersion, fetchImpl }) {
+export async function draftNotes(subjects, { apiKey, fetchImpl }) {
   const lines = filterSubjects(subjects);
   if (lines.length === 0) {
     // Nothing to rewrite: asking anyway invites invented release notes.
@@ -128,13 +122,13 @@ export async function draftNotes(subjects, { apiKey, model, apiVersion, fetchImp
     return { entries: raw, status: "GEMINI_API_KEY not set, using raw git log", warn: true };
   }
   try {
-    const entries = await polishWithGemini(raw, { apiKey, model, apiVersion, fetchImpl });
-    return { entries, status: `Successfully fetched changelog from Gemini (model: ${model})`, warn: false };
+    const entries = await polishWithGemini(raw, { apiKey, fetchImpl });
+    return { entries, status: `Successfully fetched changelog from Gemini (model: ${GEMINI_MODEL})`, warn: false };
   } catch (err) {
     // The reason stays in the step log. Annotations and the summary show on the run
     // page, where a raw API error reads like a failed release.
     console.log(`Gemini request failed: ${err.message}`);
-    return { entries: raw, status: `Gemini unavailable (model: ${model}), using raw git log`, warn: true };
+    return { entries: raw, status: `Gemini unavailable (model: ${GEMINI_MODEL}), using raw git log`, warn: true };
   }
 }
 
@@ -155,8 +149,6 @@ async function main() {
 
   const { entries, status, warn } = await draftNotes(subjects, {
     apiKey: process.env.GEMINI_API_KEY,
-    model: process.env.GEMINI_MODEL || DEFAULT_MODEL,
-    apiVersion: process.env.GEMINI_API_VERSION || DEFAULT_API_VERSION,
   });
   console.log(warn ? `::warning::${status}` : status);
 

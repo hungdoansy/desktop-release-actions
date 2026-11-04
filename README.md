@@ -58,12 +58,10 @@ targets: '[{ "input": "linux_arm64", "name": "linux-arm64", "os": "ubuntu-24.04-
 
 ## validate-and-draft-notes
 
-| Input                | Default            | Notes                                    |
-| -------------------- | ------------------ | ---------------------------------------- |
-| `version`            | Required           | `X.Y.Z`, with no leading `v`             |
-| `gemini-api-key`     | Empty              | Without it, notes are the commit list    |
-| `gemini-model`       | `gemini-3.5-flash` | Pin your own if your key needs another   |
-| `gemini-api-version` | `v1`               | The version in the Gemini request path   |
+| Input            | Default  | Notes                                 |
+| ---------------- | -------- | ------------------------------------- |
+| `version`        | Required | `X.Y.Z`, with no leading `v`          |
+| `gemini-api-key` | Empty    | Without it, notes are the commit list |
 
 Outputs: `version`, `tag`, `date`, `changelog`.
 
@@ -71,7 +69,13 @@ Notes come from the commits since the last `v*` tag, or the last 20 when there i
 
 Gemini never fails a release. Without a key, or on any failure or 30-second timeout, the notes are the commit list and the run shows a one-line warning. With no notable commits, Gemini is skipped and the notes read `- No notable changes`.
 
-If you pin `gemini-model` and Google retires that model, your release falls back to the commit list until you change the pin.
+Every app calls the same URL, set by `GEMINI_URL` in `validate-and-draft-notes.mjs`:
+
+```text
+https://generativelanguage.googleapis.com/v1/models/gemini-3.6-flash:generateContent
+```
+
+If Google retires that model, or your key can't use it, your release falls back to the commit list until the URL changes here.
 
 ## prepend-changelog-entry
 
