@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { devNull, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -15,10 +15,6 @@ import {
   writeOutput,
 } from "./validate-and-draft-notes.mjs";
 
-// Keep a developer's git config, such as tag signing, out of the tests.
-process.env.GIT_CONFIG_GLOBAL = devNull;
-process.env.GIT_CONFIG_NOSYSTEM = "1";
-
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "validate-and-draft-notes.mjs");
 const dirs = [];
 after(() => dirs.forEach((dir) => rmSync(dir, { recursive: true, force: true })));
@@ -28,6 +24,12 @@ function tempDir() {
   dirs.push(dir);
   return dir;
 }
+
+// Keep a developer's git config, such as tag signing, out of the tests. An empty file
+// stands in for it, because git on Windows cannot read the null device as a config.
+process.env.GIT_CONFIG_GLOBAL = join(tempDir(), "gitconfig");
+writeFileSync(process.env.GIT_CONFIG_GLOBAL, "");
+process.env.GIT_CONFIG_NOSYSTEM = "1";
 
 function git(cwd, ...args) {
   return execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], {
