@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
@@ -250,16 +250,12 @@ const FAILURES = {
 };
 
 for (const [name, fetchImpl] of Object.entries(FAILURES)) {
-  test(`draftNotes falls back on ${name} without logging the response body`, async (t) => {
-    const log = t.mock.method(console, "log", () => {});
-    const result = await draftNotes(["feat: a"], { ...OPTIONS, fetchImpl });
-    const logged = log.mock.calls.map((call) => call.arguments.join(" ")).join("\n");
-    assert.equal(result.entries, "- a");
-    assert.equal(result.warn, true);
-    assert.equal(result.status, "Gemini unavailable (model: gemini-3.6-flash), using raw git log");
-    assert.match(logged, /Gemini request failed/);
-    assert.ok(!logged.includes(BODY));
-    assert.ok(!result.status.includes(BODY));
+  test(`draftNotes stops on ${name} without exposing the response body`, async () => {
+    await assert.rejects(draftNotes(["feat: a"], { ...OPTIONS, fetchImpl }), (err) => {
+      assert.match(err.message, /^Gemini request failed \(model: gemini-3\.6-flash\): /);
+      assert.ok(!err.message.includes(BODY));
+      return true;
+    });
   });
 }
 
@@ -272,14 +268,29 @@ const KEY_FAILURES = {
 };
 
 for (const [name, fetchImpl] of Object.entries(KEY_FAILURES)) {
-  test(`draftNotes keeps the key out of its output on ${name}`, async (t) => {
+  test(`draftNotes keeps the key out of its error on ${name}`, async (t) => {
     const log = t.mock.method(console, "log", () => {});
-    const result = await draftNotes(["feat: a"], { apiKey: KEY, fetchImpl });
-    const logged = log.mock.calls.map((call) => call.arguments.join(" ")).join("\n");
-    assert.ok(!logged.includes(KEY));
-    assert.ok(!JSON.stringify(result).includes(KEY));
+    await assert.rejects(draftNotes(["feat: a"], { apiKey: KEY, fetchImpl }), (err) => {
+      assert.ok(!err.message.includes(KEY));
+      return true;
+    });
+    assert.equal(log.mock.callCount(), 0);
   });
 }
+
+test("the CLI stops with an error and writes no outputs when Gemini fails", () => {
+  const output = join(tempDir(), "output");
+  const stub = "data:text/javascript,globalThis.fetch=async()=>({ok:false,status:403})";
+  const result = spawnSync(process.execPath, ["--import", stub, SCRIPT], {
+    cwd: repoWith(["feat: a"]),
+    encoding: "utf8",
+    env: { ...process.env, VERSION: "9.9.9", GEMINI_API_KEY: KEY, GITHUB_OUTPUT: output },
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /::error::Gemini request failed .*HTTP 403/);
+  assert.ok(!existsSync(output));
+  assert.ok(!`${result.stdout}${result.stderr}`.includes(KEY));
+});
 
 test("takeApiKey removes the key from the environment", () => {
   const env = { GEMINI_API_KEY: KEY, VERSION: "1.0.0" };

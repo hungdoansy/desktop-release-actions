@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Check a release version, then draft notes from the commits since the last tag. Gemini
-// rewrites the notes when it can. A release never fails because of Gemini: without a
-// key, or on any Gemini failure, the notes are the filtered commit list.
+// rewrites the notes. Without a key, the notes are the filtered commit list. A failed
+// Gemini call stops the release, so it gets fixed instead of shipping unpolished notes.
 //
 // Env:
 //   VERSION              X.Y.Z, required
@@ -125,10 +125,8 @@ export async function draftNotes(subjects, { apiKey, fetchImpl }) {
     const entries = await polishWithGemini(raw, { apiKey, fetchImpl });
     return { entries, status: `Successfully fetched changelog from Gemini (model: ${GEMINI_MODEL})`, warn: false };
   } catch (err) {
-    // The reason stays in the step log. Annotations and the summary show on the run
-    // page, where a raw API error reads like a failed release.
-    console.log(`Gemini request failed: ${err.message}`);
-    return { entries: raw, status: `Gemini unavailable (model: ${GEMINI_MODEL}), using raw git log`, warn: true };
+    // err.message is only a status, never the response body, so it is safe on the run page.
+    throw new Error(`Gemini request failed (model: ${GEMINI_MODEL}): ${err.message}`);
   }
 }
 

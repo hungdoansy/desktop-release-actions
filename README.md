@@ -69,7 +69,9 @@ Outputs: `version`, `tag`, `date`, `changelog`.
 
 Notes come from the commits since the last `v*` tag, or the last 20 when there is none. These commits are left out: `release`, `docs`, `test`, `chore`, `ci`, `build`, `style` and `refactor`. Conventional prefixes and trailing references such as `(#12)` and `(ABC-123)` are removed.
 
-Gemini never fails a release. Without a key, or on any failure or 30-second timeout, the notes are the commit list and the run shows a one-line warning. With no notable commits, Gemini is skipped and the notes read `- No notable changes`.
+Without a key, the notes are the commit list and the run shows a one-line warning. With no notable commits, Gemini is skipped and the notes read `- No notable changes`.
+
+A failed Gemini call or a 30-second timeout stops the release before anything builds. The run page shows the status, such as `HTTP 403`, and never the response body. Fix the cause, then run the release again.
 
 Every app calls the same URL, set by `GEMINI_URL` in `validate-and-draft-notes.mjs`:
 
@@ -77,7 +79,7 @@ Every app calls the same URL, set by `GEMINI_URL` in `validate-and-draft-notes.m
 https://generativelanguage.googleapis.com/v1/models/gemini-3.6-flash:generateContent
 ```
 
-If Google retires that model, or your key can't use it, your release falls back to the commit list until the URL changes here.
+If Google retires that model, or your key can't use it, releases stop until the URL or the key changes.
 
 ## prepend-changelog-entry
 
