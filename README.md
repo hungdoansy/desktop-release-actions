@@ -29,6 +29,8 @@ The only secret you pass is the optional Gemini key. `tag-and-publish-release` a
 
 Always pass the key from `secrets`, on the `validate-and-draft-notes` step only. GitHub then shows it as `***` in logs. A repo variable or a job-level `env` would not protect it the same way.
 
+If the key is an environment secret, set `environment:` on that job. Without it the job gets an empty key, and the notes fall back to the commit list with only a warning.
+
 ## select-build-targets
 
 ```yaml
