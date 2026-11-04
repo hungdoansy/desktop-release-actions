@@ -3,7 +3,7 @@ description: Turn workflow_dispatch checkboxes into a build matrix of the ticked
 
 inputs:
   targets:
-    description: JSON list of targets. Each entry names its checkbox in `input`; other fields pass through to the matrix.
+    description: "Target ids, such as `mac_arm64, linux_x64`. Each id is also its checkbox name. For a target with no preset, pass a JSON list."
     required: true
   selected:
     description: The run's checkboxes, as toJSON(inputs).

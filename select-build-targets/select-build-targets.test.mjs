@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { selectTargets } from "./select-build-targets.mjs";
+import { PRESETS, resolveTargets, selectTargets } from "./select-build-targets.mjs";
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "select-build-targets.mjs");
 
@@ -50,12 +50,51 @@ test("fails when a target has no input field", () => {
 });
 
 test("fails on an empty target list", () => {
-  assert.throws(() => selectTargets([], NONE), /non-empty/);
+  assert.throws(() => selectTargets([], NONE), /at least one target/);
 });
 
 test("ignores inputs that are not targets", () => {
   const selected = { ...NONE, mac_arm64: true, version: "1.0.0", dry_run: true };
   assert.equal(selectTargets(TARGETS, selected).include.length, 1);
+});
+
+test("resolves ids to their presets, in the order given", () => {
+  assert.deepEqual(resolveTargets("windows_x64, mac_arm64"), [
+    { input: "windows_x64", ...PRESETS.windows_x64 },
+    { input: "mac_arm64", ...PRESETS.mac_arm64 },
+  ]);
+});
+
+test("accepts ids split by spaces or new lines", () => {
+  const ids = (text) => resolveTargets(text).map((t) => t.input);
+  assert.deepEqual(ids("mac_x64 linux_x64"), ["mac_x64", "linux_x64"]);
+  assert.deepEqual(ids("\n  mac_x64\n  linux_x64\n"), ["mac_x64", "linux_x64"]);
+});
+
+test("every preset has the fields Tauri and Electron builds read", () => {
+  for (const preset of Object.values(PRESETS)) {
+    assert.deepEqual(Object.keys(preset), ["name", "os", "arch", "target", "bundles"]);
+  }
+});
+
+test("an unknown id fails and lists the known ones", () => {
+  assert.throws(
+    () => resolveTargets("mac_arm64, mac_intel"),
+    /Unknown target "mac_intel"\. Known: mac_arm64, mac_x64, windows_x64, linux_x64/,
+  );
+});
+
+test("an inherited object key is not a target id", () => {
+  assert.throws(() => resolveTargets("toString"), /Unknown target "toString"/);
+});
+
+test("a JSON list still works, for targets with no preset", () => {
+  const custom = [{ input: "linux_arm64", name: "linux-arm64", os: "ubuntu-24.04-arm" }];
+  assert.deepEqual(resolveTargets(JSON.stringify(custom)), custom);
+});
+
+test("empty targets fail", () => {
+  assert.throws(() => selectTargets(resolveTargets("  "), NONE), /at least one target/);
 });
 
 function run(env) {
@@ -83,6 +122,17 @@ test("the CLI writes the matrix to GITHUB_OUTPUT", () => {
   assert.equal(result.status, 0);
   assert.match(result.stdout, /Building: mac-arm64/);
   assert.deepEqual(JSON.parse(result.written.replace(/^matrix=/, "")), { include: [TARGETS[0]] });
+});
+
+test("the CLI builds the matrix from target ids", () => {
+  const result = run({
+    TARGETS: "mac_arm64, linux_x64",
+    SELECTED: JSON.stringify({ ...NONE, linux_x64: true }),
+  });
+  assert.equal(result.status, 0);
+  assert.deepEqual(JSON.parse(result.written.replace(/^matrix=/, "")), {
+    include: [{ input: "linux_x64", ...PRESETS.linux_x64 }],
+  });
 });
 
 test("the CLI reports invalid targets JSON as an error", () => {

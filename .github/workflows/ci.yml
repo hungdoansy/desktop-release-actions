@@ -51,13 +51,8 @@ jobs:
       - uses: ./select-build-targets
         id: select
         with:
-          targets: |
-            [
-              { "input": "ubuntu", "name": "ubuntu", "os": "ubuntu-latest" },
-              { "input": "windows", "name": "windows", "os": "windows-latest" },
-              { "input": "macos", "name": "macos", "os": "macos-latest" }
-            ]
-          selected: '{ "ubuntu": true, "windows": true, "macos": false, "version": "1.0.0" }'
+          targets: linux_x64, windows_x64, mac_arm64
+          selected: '{ "linux_x64": true, "windows_x64": true, "mac_arm64": false, "version": "1.0.0" }'
 
   use-selected-targets:
     name: Selected target ${{ matrix.name }}

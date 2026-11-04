@@ -34,16 +34,27 @@ The only secret you pass is the optional Gemini key. `tag-and-publish-release` a
   id: targets
   with:
     selected: ${{ toJSON(inputs) }}
-    targets: |
-      [
-        { "input": "mac_arm64", "name": "mac-arm64", "os": "macos-latest" },
-        { "input": "linux_x64", "name": "linux-x64", "os": "ubuntu-latest" }
-      ]
+    targets: mac_arm64, windows_x64, linux_x64
 ```
 
-Each target's `input` names a boolean `workflow_dispatch` input. Other fields pass through to the matrix, so use whatever your build needs. Pass the `matrix` output to `strategy.matrix` with `fromJSON`.
+Each id in `targets` is also the name of a boolean `workflow_dispatch` input. Pass the `matrix` output to `strategy.matrix` with `fromJSON`.
+
+| Id            | `name`        | `os`             | `arch`  | `target`                   | `bundles`      |
+| ------------- | ------------- | ---------------- | ------- | -------------------------- | -------------- |
+| `mac_arm64`   | `mac-arm64`   | `macos-latest`   | `arm64` | `aarch64-apple-darwin`     | `dmg`          |
+| `mac_x64`     | `mac-x64`     | `macos-latest`   | `x64`   | `x86_64-apple-darwin`      | `dmg`          |
+| `windows_x64` | `windows-x64` | `windows-latest` | `x64`   | `x86_64-pc-windows-msvc`   | `nsis`         |
+| `linux_x64`   | `linux-x64`   | `ubuntu-latest`  | `x64`   | `x86_64-unknown-linux-gnu` | `deb,appimage` |
+
+All of these fields reach the matrix. Tauri builds read `target` and `bundles`, and Electron builds read `arch`.
 
 To skip a target for one run, untick it. To skip it on every run, set its `default` to `false`. A run with nothing ticked stops. Your workflow must declare the checkboxes itself, because GitHub reads `workflow_dispatch` inputs from the calling workflow.
+
+For a target with no preset, pass a JSON list instead. `input` names the checkbox, and other fields pass through to the matrix:
+
+```yaml
+targets: '[{ "input": "linux_arm64", "name": "linux-arm64", "os": "ubuntu-24.04-arm" }]'
+```
 
 ## validate-and-draft-notes
 
