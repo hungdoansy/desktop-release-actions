@@ -115,7 +115,9 @@ A dry run commits and tags on the runner only. The run summary shows the assets 
 
 ### If the GitHub Release step fails after the push
 
-The commit and tag are already on the remote, so a re-run stops at the tag. Create the release by hand from the tag, using your workflow's build artifacts before they expire:
+The commit and tag are already on the remote. Use **Re-run failed jobs** while the build artifacts last: the job sees the release commit and tag, skips the push, and creates the GitHub Release. Assets uploaded by the failed attempt are replaced.
+
+This needs the release in its own job. **Re-run all jobs** stops at the tag check, and so does any re-run of a workflow that builds and releases in one job. In those cases, create the release by hand from the tag, using your workflow's build artifacts before they expire:
 
 ```bash
 gh release create v1.2.0 ./downloaded-artifacts/* --notes-file notes.md

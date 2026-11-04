@@ -7,6 +7,7 @@ import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
+  alreadyPushed,
   checkAssets,
   commitAndTag,
   dryRunSummary,
@@ -253,6 +254,50 @@ test("the CLI real run pushes and writes no dry-run summary", () => {
   assert.equal(result.status, 0, result.stderr);
   assert.equal(git(remote, "log", "-1", "--format=%s", "main"), "release: v1.2.0");
   assert.equal(result.summary, "");
+});
+
+test("the CLI re-run after a push skips to the GitHub Release", () => {
+  const { remote, repo } = setup();
+  bump(repo);
+  assert.equal(runCli(repo, {}).status, 0);
+  const before = refs(remote);
+
+  const rerun = tempDir();
+  git(rerun, "clone", "-q", remote, ".");
+  writeFileSync(join(rerun, "CHANGELOG.md"), "# Changelog\n\n## v1.2.0\n\n## v1.2.0\n");
+  const result = runCli(rerun, {});
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(refs(remote), before);
+  assert.equal(git(rerun, "log", "-1", "--format=%s"), "release: v1.2.0");
+  assert.equal(git(rerun, "rev-list", "--count", "HEAD"), "2");
+});
+
+test("alreadyPushed is false with no tag", () => {
+  const { repo } = setup();
+  assert.equal(alreadyPushed({ tag: "v1.2.0", cwd: repo }), false);
+});
+
+test("the CLI stops on a tag that is not a release commit", () => {
+  const { remote, repo } = setup();
+  git(repo, "tag", "v1.2.0");
+  git(repo, "push", "-q", "origin", "v1.2.0");
+  const before = refs(remote);
+  bump(repo);
+
+  const result = runCli(repo, {});
+
+  assert.equal(result.status, 1);
+  assert.equal(refs(remote), before);
+});
+
+test("alreadyPushed is false for a release commit on another branch", () => {
+  const { repo } = setup();
+  const main = git(repo, "rev-parse", "HEAD");
+  bump(repo);
+  commitAndTag({ tag: "v1.2.0", paths: ["CHANGELOG.md"], cwd: repo });
+  git(repo, "reset", "-q", "--hard", main);
+  assert.equal(alreadyPushed({ tag: "v1.2.0", cwd: repo }), false);
 });
 
 test("the CLI stops on a bad glob before committing or pushing", () => {

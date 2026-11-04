@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Commit the release files, tag them, and push the branch and tag together. The action
 // creates the GitHub Release after this script. Assets are checked here first, so a bad
-// `files` glob stops the run before anything reaches the remote.
+// `files` glob stops the run before anything reaches the remote. A re-run after the push
+// skips the commit and push, so the GitHub Release step can finish the job.
 //
 // Env:
 //   TAG                  e.g. v2.3.0
@@ -58,6 +59,25 @@ export function checkAssets({ matched, unmatched }, patterns, failOnUnmatched) {
   if (patterns.length > 0 && matched.length === 0) {
     throw new Error(`No release assets found for: ${patterns.join(", ")}`);
   }
+}
+
+function succeeds(args, cwd) {
+  try {
+    git(args, cwd);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** True when an earlier attempt already pushed this release commit and tag to this branch. */
+export function alreadyPushed({ tag, cwd }) {
+  const ref = `refs/tags/${tag}`;
+  if (!succeeds(["rev-parse", "-q", "--verify", ref], cwd)) return false;
+  return (
+    git(["log", "-1", "--format=%s", ref], cwd) === `release: ${tag}` &&
+    succeeds(["merge-base", "--is-ancestor", ref, "HEAD"], cwd)
+  );
 }
 
 /** Stage `paths`, then commit and tag them locally. */
@@ -119,6 +139,12 @@ function main() {
 
   const assets = resolveAssets(patterns, cwd);
   checkAssets(assets, patterns, process.env.FAIL_ON_UNMATCHED === "true");
+
+  if (alreadyPushed({ tag, cwd })) {
+    console.log(`${tag} is already on ${branch}, skipping the commit and push`);
+    return;
+  }
+
   commitAndTag({ tag, paths: lines(process.env.COMMIT_PATHS), cwd });
 
   if (dryRun) {
