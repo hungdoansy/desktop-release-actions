@@ -1,0 +1,25 @@
+name: Select build targets
+description: Turn workflow_dispatch checkboxes into a build matrix of the ticked targets.
+
+inputs:
+  targets:
+    description: JSON list of targets. Each entry names its checkbox in `input`; other fields pass through to the matrix.
+    required: true
+  selected:
+    description: The run's checkboxes, as toJSON(inputs).
+    required: true
+
+outputs:
+  matrix:
+    description: "The `{ include: [...] }` matrix for fromJSON."
+    value: ${{ steps.select.outputs.matrix }}
+
+runs:
+  using: composite
+  steps:
+    - id: select
+      shell: bash
+      env:
+        TARGETS: ${{ inputs.targets }}
+        SELECTED: ${{ inputs.selected }}
+      run: node "$GITHUB_ACTION_PATH/select-build-targets.mjs"

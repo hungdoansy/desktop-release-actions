@@ -1,0 +1,146 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - run: node --test
+
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # actionlint reads workflow files only. The jobs below check each action.yml.
+      - uses: docker://rhysd/actionlint:1.7.7
+        with:
+          args: -color .github/workflows/ci.yml examples/tauri-release.yml examples/electron-release.yml
+
+  select-targets:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: ./select-build-targets
+        id: select
+        with:
+          targets: |
+            [
+              { "input": "ubuntu", "name": "ubuntu", "os": "ubuntu-latest" },
+              { "input": "windows", "name": "windows", "os": "windows-latest" },
+              { "input": "macos", "name": "macos", "os": "macos-latest" }
+            ]
+          selected: '{ "ubuntu": true, "windows": true, "macos": false, "version": "1.0.0" }'
+
+  use-selected-targets:
+    name: Selected target ${{ matrix.name }}
+    needs: select-targets
+    strategy:
+      matrix: ${{ fromJSON(needs.select-targets.outputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Stage a CRLF changelog
+        run: printf '# Changelog\r\n\r\n## v1.0.0 (2026-01-01)\r\n\r\n- old\r\n' > fixture-changelog.md
+
+      - uses: ./prepend-changelog-entry
+        with:
+          file: fixture-changelog.md
+          tag: v1.1.0
+          date: 2026-02-02
+          entries: "- new"
+
+      - name: Check the block landed
+        run: grep -q '^## v1.1.0 (2026-02-02)' fixture-changelog.md
+
+  release-dry-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: ./validate-and-draft-notes
+        id: notes
+        with:
+          version: 999.0.0
+
+      - name: Check the outputs
+        env:
+          VERSION: ${{ steps.notes.outputs.version }}
+          TAG: ${{ steps.notes.outputs.tag }}
+          DATE: ${{ steps.notes.outputs.date }}
+          CHANGELOG: ${{ steps.notes.outputs.changelog }}
+        run: |
+          [ "$VERSION" = "999.0.0" ]
+          [ "$TAG" = "v999.0.0" ]
+          [[ "$DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
+          [ -n "$CHANGELOG" ]
+
+      - uses: ./prepend-changelog-entry
+        with:
+          file: fixture-changelog.md
+          tag: ${{ steps.notes.outputs.tag }}
+          date: ${{ steps.notes.outputs.date }}
+          entries: ${{ steps.notes.outputs.changelog }}
+
+      - name: Stage an asset
+        run: mkdir fixture-dist && echo asset > fixture-dist/app.dmg
+
+      - uses: ./tag-and-publish-release
+        with:
+          tag: ${{ steps.notes.outputs.tag }}
+          changelog: ${{ steps.notes.outputs.changelog }}
+          dry-run: true
+          fail-on-unmatched-files: true
+          paths: fixture-changelog.md
+          files: fixture-dist/*.dmg
+
+      - name: Check the dry run stayed local
+        env:
+          TAG: ${{ steps.notes.outputs.tag }}
+        run: |
+          git rev-parse --verify -q "refs/tags/$TAG"
+          [ "$(git log -1 --format=%s)" = "release: $TAG" ]

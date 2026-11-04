@@ -1,0 +1,49 @@
+name: Tag and publish release
+description: Commit the release files, tag them, push both at once, and create the GitHub Release.
+
+inputs:
+  tag:
+    description: Release tag, such as v1.2.0.
+    required: true
+  changelog:
+    description: Body of the GitHub Release.
+    required: true
+  paths:
+    description: Files to commit, one per line, relative to the repo root.
+    required: true
+  files:
+    description: Release assets, one glob per line.
+    default: ""
+  branch:
+    description: Branch to push to.
+    default: main
+  fail-on-unmatched-files:
+    description: Stop before pushing when any glob in `files` matches nothing.
+    default: "false"
+  dry-run:
+    description: Do everything except the push and the GitHub Release.
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        TAG: ${{ inputs.tag }}
+        CHANGELOG: ${{ inputs.changelog }}
+        COMMIT_PATHS: ${{ inputs.paths }}
+        ASSET_FILES: ${{ inputs.files }}
+        BRANCH: ${{ inputs.branch }}
+        FAIL_ON_UNMATCHED: ${{ inputs.fail-on-unmatched-files }}
+        DRY_RUN: ${{ inputs.dry-run }}
+      run: node "$GITHUB_ACTION_PATH/tag-and-publish-release.mjs"
+
+    - if: inputs.dry-run != 'true'
+      uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+      with:
+        tag_name: ${{ inputs.tag }}
+        name: ${{ inputs.tag }}
+        body: ${{ inputs.changelog }}
+        draft: false
+        files: ${{ inputs.files }}
+        fail_on_unmatched_files: ${{ inputs.fail-on-unmatched-files }}

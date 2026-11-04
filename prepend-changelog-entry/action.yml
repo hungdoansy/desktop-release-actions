@@ -1,0 +1,31 @@
+name: Prepend changelog entry
+description: Insert a release block above the newest release in a changelog.
+
+inputs:
+  tag:
+    description: Release tag, such as v1.2.0.
+    required: true
+  date:
+    description: Release date, YYYY-MM-DD.
+    required: true
+  entries:
+    description: The release notes.
+    required: true
+  file:
+    description: Changelog path, relative to the repo root.
+    default: CHANGELOG.md
+  heading:
+    description: Heading template. Placeholders are {tag}, {version} and {date}.
+    default: "## {tag} ({date})"
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        TAG: ${{ inputs.tag }}
+        DATE: ${{ inputs.date }}
+        ENTRIES: ${{ inputs.entries }}
+        CHANGELOG_FILE: ${{ inputs.file }}
+        HEADING: ${{ inputs.heading }}
+      run: node "$GITHUB_ACTION_PATH/prepend-changelog-entry.mjs"

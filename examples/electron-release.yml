@@ -1,0 +1,230 @@
+name: Release
+run-name: Release v${{ inputs.version }}${{ inputs.dry_run && ' (dry run)' || '' }}
+
+# Starter release workflow for an Electron app. Search for TODO.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g. 2.2.0)'
+        required: true
+      # Untick a target to skip it for one run, or flip its `default` to skip it every run.
+      mac_arm64:
+        description: 'Build macOS arm64'
+        type: boolean
+        default: true
+      mac_x64:
+        description: 'Build macOS x64'
+        type: boolean
+        default: true
+      windows_x64:
+        description: 'Build Windows x64'
+        type: boolean
+        default: true
+      linux_x64:
+        description: 'Build Linux x64'
+        type: boolean
+        default: true
+      dry_run:
+        description: 'Dry run: build everything, but push and publish nothing'
+        type: boolean
+        default: false
+
+# Only the release job gets write access.
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/desktop
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      date: ${{ steps.meta.outputs.date }}
+      matrix: ${{ steps.targets.outputs.matrix }}
+      changelog: ${{ steps.meta.outputs.changelog }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24 # TODO: your Node version
+          cache: pnpm
+
+      - name: Install dependencies
+        working-directory: .
+        run: pnpm install
+
+      - name: Validate version and draft notes
+        id: meta
+        uses: hungdoansy/desktop-release-actions/validate-and-draft-notes@v1
+        with:
+          version: ${{ inputs.version }}
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
+
+      - name: Pick build targets
+        id: targets
+        uses: hungdoansy/desktop-release-actions/select-build-targets@v1
+        with:
+          selected: ${{ toJSON(inputs) }}
+          targets: |
+            [
+              { "input": "mac_arm64", "os": "macos-latest", "arch": "arm64" },
+              { "input": "mac_x64", "os": "macos-latest", "arch": "x64" },
+              { "input": "windows_x64", "os": "windows-latest", "arch": "x64" },
+              { "input": "linux_x64", "os": "ubuntu-latest", "arch": "x64" }
+            ]
+
+      - name: Lint
+        run: pnpm run lint
+
+      # Explicit reporter: in Actions, Vitest adds github-actions, which appends
+      # a "Vitest Test Report" to the run summary on every run.
+      - name: Test
+        run: pnpm run test --reporter=default
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: true
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: apps/desktop
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24 # TODO: your Node version
+          cache: pnpm
+
+      - name: Install dependencies
+        working-directory: .
+        run: pnpm install
+
+      - name: Set package version
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = process.env.VERSION;
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+      # Only if your app bundles the changelog. Otherwise delete this step.
+      - name: Add changelog entry
+        uses: hungdoansy/desktop-release-actions/prepend-changelog-entry@v1
+        with:
+          file: apps/desktop/CHANGELOG.md
+          tag: ${{ needs.prepare.outputs.tag }}
+          date: ${{ needs.prepare.outputs.date }}
+          entries: ${{ needs.prepare.outputs.changelog }}
+
+      - name: Build app
+        run: pnpm run build
+
+      - name: Package
+        run: npx electron-builder --${{ matrix.arch }} --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-${{ matrix.os }}-${{ matrix.arch }}
+          retention-days: 1
+          path: |
+            apps/desktop/dist/*.dmg
+            apps/desktop/dist/*.zip
+            apps/desktop/dist/*.exe
+            apps/desktop/dist/*.AppImage
+            apps/desktop/dist/*.deb
+          if-no-files-found: error
+
+  release:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24 # TODO: your Node version
+          cache: pnpm
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Update package.json version
+        working-directory: apps/desktop
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = process.env.VERSION;
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+      - name: Update CHANGELOG.md
+        uses: hungdoansy/desktop-release-actions/prepend-changelog-entry@v1
+        with:
+          file: apps/desktop/CHANGELOG.md
+          tag: ${{ needs.prepare.outputs.tag }}
+          date: ${{ needs.prepare.outputs.date }}
+          entries: ${{ needs.prepare.outputs.changelog }}
+
+      - name: Tag and publish
+        uses: hungdoansy/desktop-release-actions/tag-and-publish-release@v1
+        with:
+          tag: ${{ needs.prepare.outputs.tag }}
+          changelog: ${{ needs.prepare.outputs.changelog }}
+          dry-run: ${{ inputs.dry_run }}
+          paths: |
+            apps/desktop/CHANGELOG.md
+            apps/desktop/package.json
+          files: |
+            artifacts/**/*.dmg
+            artifacts/**/*.zip
+            artifacts/**/*.exe
+            artifacts/**/*.AppImage
+            artifacts/**/*.deb
+
+      # A dry run keeps the installers for a day, so they can be downloaded and checked.
+      - name: Delete artifacts
+        if: ${{ !inputs.dry_run }}
+        uses: geekyeggo/delete-artifact@v5
+        with:
+          name: app-*

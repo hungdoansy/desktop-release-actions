@@ -1,0 +1,42 @@
+name: Validate and draft notes
+description: Check a release version, then draft release notes from the commits since the last tag.
+
+inputs:
+  version:
+    description: Version to release, X.Y.Z with no leading v.
+    required: true
+  gemini-api-key:
+    description: Optional. Without it, the notes are the filtered commit list.
+    default: ""
+  gemini-model:
+    description: Gemini model that rewrites the notes.
+    default: gemini-3.5-flash
+  gemini-api-version:
+    description: Gemini API version in the request path.
+    default: v1
+
+outputs:
+  version:
+    description: The validated version.
+    value: ${{ steps.draft.outputs.version }}
+  tag:
+    description: The tag to create, such as v1.2.0.
+    value: ${{ steps.draft.outputs.tag }}
+  date:
+    description: Today's UTC date, YYYY-MM-DD.
+    value: ${{ steps.draft.outputs.date }}
+  changelog:
+    description: The release notes.
+    value: ${{ steps.draft.outputs.changelog }}
+
+runs:
+  using: composite
+  steps:
+    - id: draft
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        GEMINI_API_KEY: ${{ inputs.gemini-api-key }}
+        GEMINI_MODEL: ${{ inputs.gemini-model }}
+        GEMINI_API_VERSION: ${{ inputs.gemini-api-version }}
+      run: node "$GITHUB_ACTION_PATH/validate-and-draft-notes.mjs"
